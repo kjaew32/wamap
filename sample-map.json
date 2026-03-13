@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "gridWidth": 15,
+  "gridHeight": 15,
+  "blocks": [
+    {
+      "id": "default",
+      "name": "Brown Block",
+      "color": "#8B4513"
+    },
+    {
+      "id": "stone",
+      "name": "Stone Block",
+      "color": "#708090"
+    },
+    {
+      "id": "grass",
+      "name": "Grass Block",
+      "color": "#228B22"
+    },
+    {
+      "id": "sand",
+      "name": "Sand Block",
+      "color": "#F4A460"
+    }
+  ],
+  "map": [
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, null, null, null, null, null, null, null, null, null],
+    [null, null, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 1, "rotation": 0}, {"blockIndex": 1, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, null, null, null, null, null, null, null, null, null],
+    [null, null, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 1, "rotation": 0}, {"blockIndex": 1, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, null, null, null, null, null, null, null, null, null],
+    [null, null, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, {"blockIndex": 0, "rotation": 0}, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, null, null, null, null],
+    [null, null, null, null, null, null, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 3, "rotation": 0}, {"blockIndex": 3, "rotation": 0}, {"blockIndex": 3, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, null, null, null, null],
+    [null, null, null, null, null, null, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 3, "rotation": 0}, {"blockIndex": 3, "rotation": 0}, {"blockIndex": 3, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, null, null, null, null],
+    [null, null, null, null, null, null, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, {"blockIndex": 2, "rotation": 0}, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
+  ]
+}
