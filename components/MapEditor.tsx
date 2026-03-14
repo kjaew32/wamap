@@ -2,7 +2,7 @@
 
 import { Canvas, useLoader } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import * as THREE from 'three'
 import { BlockData, TileData, MapData } from './types'
 
@@ -110,6 +110,9 @@ function GridTile({
   y, 
   gridSize,
   onClick,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
   onPointerOver,
   onPointerOut
 }: {
@@ -117,6 +120,9 @@ function GridTile({
   y: number
   gridSize: number
   onClick: () => void
+  onPointerDown: (x: number, y: number) => void
+  onPointerMove: (x: number, y: number) => void
+  onPointerUp: () => void
   onPointerOver: () => void
   onPointerOut: () => void
 }) {
@@ -130,6 +136,18 @@ function GridTile({
       onClick={(e) => {
         e.stopPropagation()
         onClick()
+      }}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        onPointerDown(x, y)
+      }}
+      onPointerMove={(e) => {
+        e.stopPropagation()
+        onPointerMove(x, y)
+      }}
+      onPointerUp={(e) => {
+        e.stopPropagation()
+        onPointerUp()
       }}
       onPointerOver={(e) => {
         e.stopPropagation()
@@ -152,23 +170,31 @@ function Scene({
   blocks, 
   gridSize, 
   onTileClick,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
   hoveredTile,
-  setHoveredTile
+  setHoveredTile,
+  cameraLocked
 }: { 
   map: (TileData | null)[][]
   blocks: BlockData[]
   gridSize: number
   onTileClick: (x: number, y: number) => void
+  onPointerDown: (x: number, y: number) => void
+  onPointerMove: (x: number, y: number) => void
+  onPointerUp: () => void
   hoveredTile: { x: number, y: number } | null
   setHoveredTile: (tile: { x: number, y: number } | null) => void
+  cameraLocked: boolean
 }) {
   return (
     <>
       <PerspectiveCamera makeDefault position={[15, 15, 15]} />
       <OrbitControls 
-        enablePan={true}
-        enableZoom={true}
-        enableRotate={true}
+        enablePan={!cameraLocked}
+        enableZoom={!cameraLocked}
+        enableRotate={!cameraLocked}
         minDistance={5}
         maxDistance={50}
         maxPolarAngle={Math.PI / 2.2}
@@ -189,6 +215,9 @@ function Scene({
             y={y}
             gridSize={gridSize}
             onClick={() => onTileClick(x, y)}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
             onPointerOver={() => setHoveredTile({ x, y })}
             onPointerOut={() => setHoveredTile(null)}
           />
@@ -207,7 +236,7 @@ function Scene({
             if (block.image) {
               return (
                 <ImageBlock
-                  key={`block-${x}-${y}`}
+                  key={`block-${x}-${y}-${block.image}`}
                   position={[posX, 0.25, posZ]}
                   imageUrl={block.image}
                   rotation={tile.rotation}
@@ -221,9 +250,9 @@ function Scene({
             // 기본 큐브 블록
             return (
               <IsometricBlock
-                key={`block-${x}-${y}`}
+                key={`block-${x}-${y}-${tile.color}`}
                 position={[posX, 0.25, posZ]}
-                color={block.color}
+                color={tile.color || '#8B4513'}
                 onClick={() => onTileClick(x, y)}
                 onPointerOver={() => setHoveredTile({ x, y })}
                 onPointerOut={() => setHoveredTile(null)}
@@ -258,31 +287,78 @@ export default function MapEditor() {
   const [currentRotation, setCurrentRotation] = useState(0)
   const [editMode, setEditMode] = useState<'place' | 'erase'>('place')
   const [hoveredTile, setHoveredTile] = useState<{ x: number, y: number } | null>(null)
+  const [isMouseDown, setIsMouseDown] = useState(false)
+  const [lastProcessedTile, setLastProcessedTile] = useState<{ x: number, y: number } | null>(null)
+  const [cameraLocked, setCameraLocked] = useState(true)
+  const [showColorPalette, setShowColorPalette] = useState(false)
+  const [currentBlockColor, setCurrentBlockColor] = useState('#8B4513')
+  const [selectedColorIndex, setSelectedColorIndex] = useState(0)
   
   const [blocks, setBlocks] = useState<BlockData[]>([
-    { id: 'default', name: 'Brown Block', color: '#8B4513' },
-    { id: 'stone', name: 'Stone Block', color: '#708090' },
-    { id: 'grass', name: 'Grass Block', color: '#228B22' },
-    { id: 'sand', name: 'Sand Block', color: '#F4A460' },
+    { id: 'default', name: 'Block', color: '#8B4513' },
   ])
+
+  // 색상 팔레트
+  const colorPalette = [
+    '#8B4513', // Brown
+    '#708090', // Stone
+    '#228B22', // Grass
+    '#F4A460', // Sand
+    '#FF6B6B', // Red
+    '#4ECDC4', // Teal
+    '#45B7D1', // Blue
+    '#96CEB4', // Green
+    '#FFEAA7', // Yellow
+    '#DDA0DD', // Plum
+    '#98D8C8', // Mint
+    '#F7DC6F', // Light Yellow
+  ]
   
   const [map, setMap] = useState<(TileData | null)[][]>(
     Array.from({ length: gridHeight }, () => Array(gridWidth).fill(null))
   )
 
-  const handleTileClick = (x: number, y: number) => {
+  const processTile = (x: number, y: number) => {
+    // 이미 처리한 타일이면 스킵
+    if (lastProcessedTile && lastProcessedTile.x === x && lastProcessedTile.y === y) {
+      return
+    }
+
     const newMap = [...map]
     
     if (editMode === 'place') {
       newMap[y][x] = {
         blockIndex: selectedBlockIndex,
-        rotation: currentRotation
+        rotation: currentRotation,
+        color: currentBlockColor
       }
     } else {
       newMap[y][x] = null
     }
     
     setMap(newMap)
+    setLastProcessedTile({ x, y })
+  }
+
+  const handleTileClick = (x: number, y: number) => {
+    processTile(x, y)
+  }
+
+  const handlePointerDown = (x: number, y: number) => {
+    setIsMouseDown(true)
+    setLastProcessedTile(null)
+    processTile(x, y)
+  }
+
+  const handlePointerMove = (x: number, y: number) => {
+    if (isMouseDown) {
+      processTile(x, y)
+    }
+  }
+
+  const handlePointerUp = () => {
+    setIsMouseDown(false)
+    setLastProcessedTile(null)
   }
 
   const handleSaveMap = () => {
@@ -313,7 +389,14 @@ export default function MapEditor() {
           setGridWidth(mapData.gridWidth)
           setGridHeight(mapData.gridHeight)
           setBlocks(mapData.blocks)
-          setMap(mapData.map)
+          
+          // 기존 맵 데이터에 color 필드가 없으면 추가
+          const updatedMap = mapData.map.map(row => 
+            row.map(tile => 
+              tile ? { ...tile, color: tile.color || '#8B4513' } : null
+            )
+          )
+          setMap(updatedMap)
         } catch (err) {
           alert('Failed to load map: ' + (err as Error).message)
         }
@@ -332,232 +415,220 @@ export default function MapEditor() {
     setMap(Array.from({ length: gridHeight }, () => Array(gridWidth).fill(null)))
   }
 
-  const handleAddCustomBlock = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-    
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const newBlock: BlockData = {
-          id: `custom_${Date.now()}_${Math.random()}`,
-          name: file.name.replace(/\.[^/.]+$/, ''), // 확장자 제거
-          color: '#FFFFFF',
-          image: event.target?.result as string
-        }
-        setBlocks([...blocks, newBlock])
-      }
-      reader.readAsDataURL(file)
-    })
-    
-    e.target.value = '' // 입력 초기화
-  }
-
-  const handleDeleteBlock = (index: number) => {
-    if (confirm('Delete this block?')) {
-      setBlocks(blocks.filter((_, i) => i !== index))
-      if (selectedBlockIndex === index) {
-        setSelectedBlockIndex(0)
-      } else if (selectedBlockIndex > index) {
-        setSelectedBlockIndex(selectedBlockIndex - 1)
-      }
-    }
-  }
-
   return (
-    <div className="h-screen flex">
-      {/* Sidebar */}
-      <div className="w-80 bg-gradient-to-b from-slate-900 to-slate-800 p-6 overflow-y-auto shadow-2xl">
-        <h2 className="text-2xl font-bold text-yellow-400 mb-6">🗺️ Map Editor</h2>
+    <div className="h-screen flex flex-col">
+      {/* Top Toolbar */}
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-2 md:p-4 flex flex-wrap items-center gap-2 md:gap-6 shadow-lg z-10">
+        <h2 className="text-lg md:text-xl font-bold text-yellow-400">🗺️ Map Editor</h2>
         
-        {/* Info */}
-        <div className="bg-slate-700/50 p-4 rounded-lg mb-6 text-sm text-slate-200">
-          <p>Click on grid: Place block</p>
-          <p>Scroll: Zoom</p>
-          <p>Right-click drag: Rotate view</p>
+        {/* File Operations */}
+        <div className="flex items-center gap-1 md:gap-2">
+          <button
+            onClick={handleSaveMap}
+            className="p-1 md:p-2 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+            title="Save Map"
+          >
+            💾
+          </button>
+          <label className="p-1 md:p-2 bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer transition-colors" title="Load Map">
+            📂
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleLoadMap}
+              className="hidden"
+            />
+          </label>
         </div>
 
         {/* Grid Size */}
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-blue-300 mb-2 uppercase tracking-wide">Grid Size</h3>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="number"
-              value={gridWidth}
-              onChange={(e) => setGridWidth(parseInt(e.target.value) || 10)}
-              min={5}
-              max={50}
-              className="w-20 px-3 py-2 bg-slate-700 text-white rounded border border-slate-600 focus:border-blue-400 outline-none"
-            />
-            <input
-              type="number"
-              value={gridHeight}
-              onChange={(e) => setGridHeight(parseInt(e.target.value) || 10)}
-              min={5}
-              max={50}
-              className="w-20 px-3 py-2 bg-slate-700 text-white rounded border border-slate-600 focus:border-blue-400 outline-none"
-            />
-            <button
-              onClick={handleResizeGrid}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors"
-            >
-              Resize
-            </button>
-          </div>
+        <div className="flex items-center gap-1 md:gap-2">
+          <span className="text-xs md:text-sm text-blue-300">Grid:</span>
+          <input
+            type="number"
+            value={gridWidth}
+            onChange={(e) => setGridWidth(parseInt(e.target.value) || 10)}
+            min={5}
+            max={50}
+            className="w-12 md:w-16 px-1 md:px-2 py-1 bg-slate-700 text-white rounded border border-slate-600 focus:border-blue-400 outline-none text-xs md:text-sm"
+            title="Grid Width"
+          />
+          <span className="text-slate-400 text-xs md:text-sm">×</span>
+          <input
+            type="number"
+            value={gridHeight}
+            onChange={(e) => setGridHeight(parseInt(e.target.value) || 10)}
+            min={5}
+            max={50}
+            className="w-12 md:w-16 px-1 md:px-2 py-1 bg-slate-700 text-white rounded border border-slate-600 focus:border-blue-400 outline-none text-xs md:text-sm"
+            title="Grid Height"
+          />
+          <button
+            onClick={handleResizeGrid}
+            className="px-2 md:px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs md:text-sm font-medium transition-colors"
+            title="Resize Grid"
+          >
+            Resize
+          </button>
         </div>
 
         {/* Tools */}
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-blue-300 mb-2 uppercase tracking-wide">Tools</h3>
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => setEditMode('place')}
-              className={`px-4 py-2 rounded font-medium transition-colors ${
-                editMode === 'place'
-                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              Place Mode
-            </button>
-            <button
-              onClick={() => setEditMode('erase')}
-              className={`px-4 py-2 rounded font-medium transition-colors ${
-                editMode === 'erase'
-                  ? 'bg-gradient-to-r from-red-600 to-pink-600 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              Erase Mode
-            </button>
-            <button
-              onClick={handleClearMap}
-              className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded font-medium transition-colors"
-            >
-              Clear Map
-            </button>
-          </div>
+        <div className="flex items-center gap-1 md:gap-2">
+          <button
+            onClick={() => setEditMode('place')}
+            className={`p-1 md:p-2 rounded transition-colors ${
+              editMode === 'place'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+            title="Place Mode"
+          >
+            ✏️
+          </button>
+          <button
+            onClick={() => setEditMode('erase')}
+            className={`p-1 md:p-2 rounded transition-colors ${
+              editMode === 'erase'
+                ? 'bg-red-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+            title="Erase Mode"
+          >
+            🗑️
+          </button>
+          <button
+            onClick={handleClearMap}
+            className="p-1 md:p-2 bg-red-700 hover:bg-red-800 text-white rounded transition-colors"
+            title="Clear Map"
+          >
+            🧹
+          </button>
+          <button
+            onClick={() => setCameraLocked(!cameraLocked)}
+            className={`p-1 md:p-2 rounded transition-colors ${
+              cameraLocked
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+            title={cameraLocked ? "Unlock Camera" : "Lock Camera"}
+          >
+            {cameraLocked ? '🔒' : '🔓'}
+          </button>
         </div>
 
-        {/* Rotation */}
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-blue-300 mb-2 uppercase tracking-wide">Rotation</h3>
-          <div className="grid grid-cols-4 gap-2">
-            {[0, 90, 180, 270].map((angle) => (
-              <button
-                key={angle}
-                onClick={() => setCurrentRotation(angle)}
-                className={`px-2 py-2 rounded font-medium text-sm transition-colors ${
-                  currentRotation === angle
-                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
-                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                }`}
-              >
-                {angle}°
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Blocks */}
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-blue-300 mb-2 uppercase tracking-wide">Blocks</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {blocks.map((block, index) => (
-              <div key={block.id} className="relative">
-                <button
-                  onClick={() => setSelectedBlockIndex(index)}
-                  className={`w-full aspect-square rounded-lg border-2 transition-all flex items-center justify-center overflow-hidden ${
-                    selectedBlockIndex === index
-                      ? 'border-yellow-400 shadow-lg shadow-yellow-400/50 scale-105'
-                      : 'border-slate-600 hover:border-slate-500'
-                  }`}
-                  style={{ backgroundColor: block.image ? 'transparent' : block.color }}
-                >
-                  {block.image ? (
-                    <img 
-                      src={block.image} 
-                      alt={block.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-white text-xs font-semibold drop-shadow-lg">
-                      {block.name.split(' ')[0]}
-                    </span>
-                  )}
-                </button>
-                
-                {/* 삭제 버튼 (커스텀 블록만) */}
-                {block.id.startsWith('custom_') && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDeleteBlock(index)
-                    }}
-                    className="absolute -top-1 -right-1 w-6 h-6 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs flex items-center justify-center shadow-lg"
-                    title="Delete block"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* File Operations */}
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-blue-300 mb-2 uppercase tracking-wide">File</h3>
-          <div className="flex flex-col gap-2">
-            <label className="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white rounded font-medium transition-all cursor-pointer text-center">
-              🎨 Add Custom Block
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleAddCustomBlock}
-                className="hidden"
-              />
-            </label>
-            
-            <button
-              onClick={handleSaveMap}
-              className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded font-medium transition-all"
-            >
-              💾 Save Map
-            </button>
-            <label className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white rounded font-medium transition-all cursor-pointer text-center">
-              📂 Load Map
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleLoadMap}
-                className="hidden"
-              />
-            </label>
-          </div>
-        </div>
+        
 
         {/* Status */}
         {hoveredTile && (
-          <div className="bg-slate-700/50 p-3 rounded text-xs font-mono text-slate-300">
+          <div className="text-xs font-mono text-slate-300 ml-2 md:ml-4">
             Tile: ({hoveredTile.x}, {hoveredTile.y})
           </div>
         )}
       </div>
 
-      {/* Canvas */}
-      <div className="flex-1 bg-gradient-to-br from-slate-800 to-slate-900">
-        <Canvas shadows>
-          <Scene
-            map={map}
-            blocks={blocks}
-            gridSize={Math.max(gridWidth, gridHeight)}
-            onTileClick={handleTileClick}
-            hoveredTile={hoveredTile}
-            setHoveredTile={setHoveredTile}
-          />
-        </Canvas>
+      <div className="flex flex-1">
+        {/* Left Sidebar - Hidden on mobile, show on md+ */}
+        <div className="hidden md:block w-80 bg-gradient-to-b from-slate-900 to-slate-800 p-6 overflow-y-auto shadow-2xl">
+          {/* Rotation */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-blue-300 mb-2 uppercase tracking-wide">Rotation</h3>
+            <div className="grid grid-cols-4 gap-2">
+              {[0, 90, 180, 270].map((angle) => (
+                <button
+                  key={angle}
+                  onClick={() => setCurrentRotation(angle)}
+                  className={`px-2 py-2 rounded font-medium text-sm transition-colors ${
+                    currentRotation === angle
+                      ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  {angle}°
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Blocks */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-blue-300 mb-2 uppercase tracking-wide">Blocks</h3>
+            <div className="grid grid-cols-3 gap-3">
+              {blocks.map((block, index) => (
+                <div key={block.id} className="relative">
+                  <button
+                    onClick={() => setShowColorPalette(!showColorPalette)}
+                    className="w-full aspect-square rounded-lg border-2 border-slate-600 hover:border-slate-500 transition-all flex items-center justify-center overflow-hidden"
+                    style={{ backgroundColor: block.image ? 'transparent' : currentBlockColor }}
+                    title={block.name}
+                  >
+                    {block.image ? (
+                      <img 
+                        src={block.image} 
+                        alt={block.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-white text-xs font-semibold drop-shadow-lg">
+                        {block.name.split(' ')[0]}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Color Palette */}
+            {showColorPalette && (
+              <div className="mt-4 p-4 bg-slate-700/50 rounded-lg">
+                <h4 className="text-xs font-semibold text-blue-300 mb-3 uppercase tracking-wide">Choose Color</h4>
+                <div className="grid grid-cols-4 gap-2">
+                  {colorPalette.map((color, index) => (
+                    <button
+                      key={color}
+                      onClick={() => {
+                        setCurrentBlockColor(color)
+                        setSelectedColorIndex(index)
+                        setShowColorPalette(false)
+                      }}
+                      className={`w-full aspect-square rounded-lg border-2 transition-all flex items-center justify-center ${
+                        selectedColorIndex === index
+                          ? 'border-white scale-110'
+                          : 'border-slate-500 hover:border-slate-400'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={`Select ${color}`}
+                    >
+                      <span className="text-white text-xs font-mono drop-shadow-lg">
+                        {color}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Canvas */}
+        <div className="flex-1 bg-gradient-to-br from-slate-800 to-slate-900 relative">
+          <Canvas 
+            shadows
+            onPointerUp={handlePointerUp}
+          >
+            <Scene
+              map={map}
+              blocks={blocks}
+              gridSize={Math.max(gridWidth, gridHeight)}
+              onTileClick={handleTileClick}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              hoveredTile={hoveredTile}
+              setHoveredTile={setHoveredTile}
+              cameraLocked={cameraLocked}
+            />
+          </Canvas>
+        </div>
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ export interface BlockData {
 export interface TileData {
   blockIndex: number
   rotation: number
+  color?: string
 }
 
 export interface MapData {

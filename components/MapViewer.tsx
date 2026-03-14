@@ -126,7 +126,7 @@ function Scene({
               <IsometricBlock
                 key={`${x}-${y}`}
                 position={[posX, 0.25, posZ]}
-                color={block.color}
+                color={tile.color || block.color}
               />
             )
           }
@@ -250,6 +250,7 @@ export default function MapViewer() {
               {mapData.map.map((row, y) =>
                 row.map((tile, x) => {
                   if (tile && mapData.blocks[tile.blockIndex]) {
+                    const block = mapData.blocks[tile.blockIndex]
                     return (
                       <rect
                         key={`${x}-${y}`}
@@ -257,7 +258,7 @@ export default function MapViewer() {
                         y={y}
                         width={1}
                         height={1}
-                        fill={mapData.blocks[tile.blockIndex].color}
+                        fill={tile.color || block.color}
                       />
                     )
                   }
